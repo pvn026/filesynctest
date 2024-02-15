@@ -1,1 +1,82 @@
-This is test file
+- hosts: all
+  become: yes
+  become_user: root
+  gather_facts: yes
+  tasks:
+     - name: Create CRI-O config file
+       file:
+         path: "/etc/modules-load.d/crio.conf"
+         state: "touch"
+     - name: add modules in conf file
+       blockinfile:
+         path: "/etc/modules-load.d/crio.conf"
+         block: |
+            overlay
+            br_netfilter
+            #This is test
+     - name: adding host entries in host file
+       blockinfile:
+         path: "/etc/hosts"
+         block: |
+            192.168.1.50  masterlab.com
+            192.168.1.51  workernode1.com
+            192.168.1.52  workernode2.com       
+     - name: Enable sysctl params
+       file:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         state: "touch"
+     - name: add configuration
+       blockinfile:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         block: |
+                net.bridge.bridge-nf-call-iptables = 1
+                net.ipv4.ip_forward = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+     - name: enable overlayFS & VxLan pod communication
+       shell: |
+               sudo modprobe overlay
+               sudo modprobe br_netfilter
+     - name: Reload parameters
+       command: sudo sysctl --system
+     - name: enable cri-repo
+       environment:
+          OS: CentOS_8
+          VERSION: 1.28
+       shell: |
+               curl -L -o /etc/yum.repos.d/devel:kubic:libcontainers:stable.repo https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/CentOS_8/devel:kubic:libcontainers:stable.repo
+               curl -L -o /etc/yum.repos.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.repo https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/CentOS_8/devel:kubic:libcontainers:stable:cri-o:$VERSION.repo
+     - name: Installing Crio
+       shell: |
+               sudo dnf install cri-o -y
+               sudo systemctl enable crio
+               sudo systemctl start crio
+     - name: Install the latest version of cri tools
+       ansible.builtin.dnf:
+         name: cri-tools
+         state: latest
+     - name: disable swap
+       shell: |
+               sudo swapoff -a
+               sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+     - name: Create kubernetes repo file
+       file:
+         path: "/etc/yum.repos.d/kubernetes_lastest.repo"
+         state: "touch"
+     - name: Add K8s Sournce Install
+       blockinfile:
+         path: "/etc/yum.repos.d/kubernetes_lastest.repo"
+         block: |
+                 [kubernetes]
+                 name=Kubernetes
+                 baseurl=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/
+                 enabled=1
+                 gpgcheck=1
+                 gpgkey=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/repodata/repomd.xml.key
+                 exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+     - name: install kubernetes
+       shell: |
+               sudo yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+               sudo systemctl enable --now kubelet
+     - name: add nodes
+       shell: |
+               kubeadm join 192.168.1.50:6443 --token agmudd.wedui7qi343w7grt --discovery-token-ca-cert-hash sha256:989d906c5210aa27d54417013de00a5a0434b7c5b732f57ba7befdf204db8354

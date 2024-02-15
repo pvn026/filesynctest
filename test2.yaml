@@ -1,6 +1,7 @@
 ---
- -name: Powershell | check for SQLServer DSC Powershell module
-      win_psmodule:
-        name: "{{ item }}"
-        state: present
-      loop: "{{ psmodules }}"
+- name: Ping
+  hosts: win
+ 
+  tasks:
+  - name: ping
+    win_ping:
